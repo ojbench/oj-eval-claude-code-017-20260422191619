@@ -21,6 +21,27 @@ static bool is_digits(const std::string &s) {
     return true;
 }
 
+static bool is_bracketed_digits(const std::string &tok) {
+    // Matches: [123], [0001], optionally with trailing ':' or ')'
+    if (tok.size() >= 3 && tok[0] == '[') {
+        size_t r = tok.find(']');
+        if (r != std::string::npos) {
+            if (r == 1) return false; // empty inside
+            for (size_t i = 1; i < r; ++i) if (tok[i] < '0' || tok[i] > '9') return false;
+            // Allow exact ']' or ']:', '])'
+            if (r + 1 == tok.size()) return true;
+            if (r + 1 < tok.size() && (tok[r+1] == ':' || tok[r+1] == ')')) return (r + 2 == tok.size());
+            return false;
+        }
+    }
+    // Matches: 123: or 123)
+    if (tok.size() >= 2 && (tok.back() == ':' || tok.back() == ')')) {
+        for (size_t i = 0; i + 1 < tok.size(); ++i) if (tok[i] < '0' || tok[i] > '9') return false;
+        return true;
+    }
+    return false;
+}
+
 static bool parse_user_line(const std::string &line, User &u) {
     // username\tpassword\tname\tmail\tpriv
     size_t p1 = line.find('\t'); if (p1 == std::string::npos) return false;
@@ -135,10 +156,10 @@ static void parse_kv(const std::string &line, std::string keys[], std::string va
     size_t i = 0, n = line.size();
     // find command start first
     while (i < n && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i;
-    // skip optional leading number
+    // skip optional leading number (digits, [digits], digits:, digits))
     size_t j = i; while (j < n && line[j] != ' ' && line[j] != '\t' && line[j] != '\r') ++j;
     std::string tok = line.substr(i, j - i);
-    if (is_digits(tok)) { i = j; while (i < n && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i; j = i; while (j < n && line[j] != ' ' && line[j] != '\t' && line[j] != '\r') ++j; }
+    if (is_digits(tok) || is_bracketed_digits(tok)) { i = j; while (i < n && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i; j = i; while (j < n && line[j] != ' ' && line[j] != '\t' && line[j] != '\r') ++j; }
     // now j points at end of cmd; continue after it
     i = j;
     while (i < n) {
@@ -180,7 +201,7 @@ int main() {
         while (j < n && line[j] != ' ' && line[j] != '\t' && line[j] != '\r') ++j;
         std::string first = line.substr(i, j - i);
         // Skip optional leading numeric timestamp/index
-        if (is_digits(first)) {
+        if (is_digits(first) || is_bracketed_digits(first)) {
             i = j;
             while (i < n && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i;
             if (i >= n) continue;
@@ -207,9 +228,8 @@ int main() {
             std::string m = getv(keys, vals, kvn, "m");
             std::string gstr = getv(keys, vals, kvn, "g");
             // Check existing user
-            bool exists = false; User tmp;
-            if (find_user("", tmp)) { /*dummy*/ }
-            exists = find_user(u, tmp);
+            User tmp;
+            bool exists = find_user(u, tmp);
             if (exists) { std::cout << -1 << "\n"; continue; }
             // Is first user?
             bool first_user = !file_exists(USERS_FILE);
